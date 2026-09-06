@@ -1,6 +1,6 @@
-from uuid import UUID, uuid4
+from uuid import UUID
 
-from sqlalchemy import Uuid
+from sqlalchemy import JSON, Uuid
 from sqlalchemy.orm import Mapped, mapped_column
 
 from database import Base
@@ -9,8 +9,12 @@ from database import Base
 class Game(Base):
     __tablename__ = "games"
 
-    session_id: Mapped[UUID] = mapped_column(
+    game_id: Mapped[UUID] = mapped_column(
         Uuid,
         primary_key=True,
-        default=uuid4,
+    )
+
+    ships: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
     )
