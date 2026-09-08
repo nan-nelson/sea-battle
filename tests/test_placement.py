@@ -1,4 +1,12 @@
-from placement import validate_fleet
+from placement import (
+    can_place_ship,
+    choose_ship_candidate, 
+    create_ship, 
+    generate_fleet,
+    get_ship_candidates, 
+    is_ship_inside_field, 
+    validate_fleet
+)
 
 
 def test_valid_fleet():
@@ -192,3 +200,68 @@ def test_ships_must_not_touch_by_corners():
     ships[1] = ["B5", "C5", "D5"]
 
     assert validate_fleet(ships) is False
+    from placement import generate_fleet
+
+def test_generate_fleet_returns_valid_fleet():
+    ships = generate_fleet()
+
+    assert validate_fleet(ships) is True
+    from placement import create_ship
+
+
+def test_create_horizontal_ship():
+    ship = create_ship("A", 1, 4, True)
+
+    assert ship == ["A1", "B1", "C1", "D1"]
+
+def test_create_vertical_ship():
+    ship = create_ship("A", 1, 4, False)
+
+    assert ship == ["A1", "A2", "A3", "A4"]
+
+
+def test_is_ship_inside_field():
+    assert is_ship_inside_field(["A1", "A2", "A3", "A4"]) is True
+    assert is_ship_inside_field(["A8", "A9", "A10", "A11"]) is False
+    assert is_ship_inside_field(["H1", "I1", "J1",]) is True
+    assert is_ship_inside_field(["I1", "J1", "K1"]) is False
+
+
+def test_create_ship_candidate_is_valid():
+    ship = create_ship("C", 5, 3, True)
+
+    assert ship == ["C5", "D5", "E5"]
+    assert is_ship_inside_field(ship) is True
+
+
+def test_generate_fleet_creates_different_placements():
+    first_fleet= generate_fleet()
+    second_fleet = generate_fleet()
+
+    assert first_fleet != second_fleet
+
+
+def test_can_place_ship_rejects_touching_ships():
+    occupied_cells = {"A1", "A2", "A3"}
+    
+    ship = ["B1", "B2"]
+
+    assert can_place_ship(ship, occupied_cells) is False
+
+
+def test_get_ship_candidates_returns_valid_ships():
+    candidates = get_ship_candidates(4)
+
+    assert candidates
+    assert all(is_ship_inside_field(ship) for ship in candidates)
+    assert all(len(ship) == 4 for ship in candidates)
+
+
+def test_choose_ship_candidate_returns_valid_ship():
+    occupied_cells = set ()
+
+    ship = choose_ship_candidate(4, occupied_cells)
+
+    assert ship is not None
+    assert len(ship) == 4
+    assert is_ship_inside_field(ship)

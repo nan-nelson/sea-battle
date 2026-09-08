@@ -1,3 +1,5 @@
+import random
+
 EXPECTED_FLEET = [1, 1, 1, 1, 2, 2, 2, 3, 3, 4]
 
 
@@ -87,3 +89,85 @@ def validate_fleet(ships):
                     return False
 
     return True
+
+FIELD_COLUMNS = "ABCDEFGHIJ"
+FIELD_ROWS = range(1, 11)
+
+
+def create_ship(start_column, start_row, size, horizontal):
+    ship = []
+
+    for i in range(size):
+        if horizontal:
+            column = chr(ord(start_column) + i)
+            row = start_row
+        else:
+            column = start_column
+            row = start_row + i
+
+        ship.append(f"{column}{row}")
+
+    return ship
+
+
+def is_ship_inside_field(ship):
+    return all(is_valid_coordinate(coordinate) for coordinate in ship)
+
+
+def can_place_ship(ship, occupied_cells):
+    for coordinate in ship:
+        if coordinate in occupied_cells:
+            return False
+
+        for neighbour in get_neighbours(coordinate):
+            if neighbour in occupied_cells:
+                return False
+
+    return True
+
+
+def get_ship_candidates(size):
+    candidates = []
+
+    for column in FIELD_COLUMNS:
+        for row in FIELD_ROWS:
+            for horizontal in (True, False):
+                ship = create_ship(column, row, size, horizontal)
+
+                if is_ship_inside_field(ship):
+                    candidates.append(ship)
+
+    return candidates
+
+def choose_ship_candidate(size, occupied_cells):
+    candidates = get_ship_candidates(size)
+
+    valid_candidates = [
+        ship 
+        for ship in candidates 
+        if can_place_ship(ship, occupied_cells)
+    ]
+
+    if not valid_candidates:
+        return None
+
+    return random.choice(valid_candidates)
+
+
+def generate_fleet():
+    for _ in range(100):
+        ships = []
+        occupied_cells = set()
+
+        for size in reversed(EXPECTED_FLEET):
+            ship = choose_ship_candidate(size, occupied_cells)
+
+            if ship is None:
+                break
+
+            ships.append(ship)
+            occupied_cells.update(ship)
+
+            if validate_fleet(ships):
+                return ships
+    raise RuntimeError("Failed to generate a valid fleet")
