@@ -68,3 +68,55 @@ def test_ship_cells_must_be_continuous():
     ships[0] = ["A1", "A2", "A4", "A5"]
 
     assert validate_fleet(ships) is False
+def test_ship_must_be_inside_field():
+    ships = [
+        ["A1", "A2", "A3", "A4"],
+        ["C1", "D1", "E1"],
+        ["G1", "G2", "G3"],
+        ["C5", "D5"],
+        ["G5", "G6"],
+        ["I5", "I6"],
+        ["A8"],
+        ["D8"],
+        ["G8"],
+        ["J10"],
+    ]
+
+    ships[0] = ["A1", "A2", "A3", "A11"]
+
+    assert validate_fleet(ships) is False
+def test_ships_must_not_overlap():
+    ships = [
+        ["A1", "A2", "A3", "A4"],
+        ["C1", "D1", "E1"],
+        ["G1", "G2", "G3"],
+        ["C5", "D5"],
+        ["G5", "G6"],
+        ["I5", "I6"],
+        ["A8"],
+        ["D8"],
+        ["G8"],
+        ["J10"],
+    ]
+
+    ships[1] = ["A4", "B4", "C4"]
+
+    assert validate_fleet(ships) is False
+
+def test_ships_must_not_touch_by_sides():
+    ships = [
+        ["A1", "A2", "A3", "A4"],
+        ["C1", "D1", "E1"],
+        ["G1", "G2", "G3"],
+        ["C5", "D5"],
+        ["G5", "G6"],
+        ["I5", "I6"],
+        ["A8"],
+        ["D8"],
+        ["G8"],
+        ["J10"],
+    ]
+
+    ships[1] = ["B4", "C4", "D4"]
+
+    assert validate_fleet(ships) is False
