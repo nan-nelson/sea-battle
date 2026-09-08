@@ -120,3 +120,75 @@ def test_ships_must_not_touch_by_sides():
     ships[1] = ["B4", "C4", "D4"]
 
     assert validate_fleet(ships) is False
+
+def test_ships_coordinates_must_have_valid_column():
+    ships = [
+        ["A1", "A2", "A3", "A4"],
+        ["C1", "D1", "E1"],
+        ["G1", "G2", "G3"],
+        ["C5", "D5"],
+        ["G5", "G6"],
+        ["I5", "I6"],
+        ["A8"],
+        ["D8"],
+        ["G8"],
+        ["J10"],
+    ]
+
+    ships[0] = ["K1", "K2", "K3", "K4"]
+
+    assert validate_fleet(ships) is False
+
+def test_ships_coordinates_must_have_valid_row():
+    ships = [
+        ["A1", "A2", "A3", "A4"],
+        ["C1", "D1", "E1"],
+        ["G1", "G2", "G3"],
+        ["C5", "D5"],
+        ["G5", "G6"],
+        ["I5", "I6"],
+        ["A8"],
+        ["D8"],
+        ["G8"],
+        ["J10"],
+    ]
+
+    ships[0] = ["A8", "A9", "A10", "A11"]
+
+    assert validate_fleet(ships) is False
+
+def test_ships_must_not_contain_duplicate_coordinates():
+    ships = [
+        ["A1", "A2", "A3", "A4"],
+        ["C1", "D1", "E1"],
+        ["G1", "G2", "G3"],
+        ["C5", "D5"],
+        ["G5", "G6"],
+        ["I5", "I6"],
+        ["A8"],
+        ["D8"],
+        ["G8"],
+        ["J10"],
+    ]
+
+    ships[0] = ["A1", "A2", "A2", "A4"]
+
+    assert validate_fleet(ships) is False
+
+def test_ships_must_not_touch_by_corners():
+    ships = [
+        ["A1", "A2", "A3", "A4"],
+        ["C1", "D1", "E1"],
+        ["G1", "G2", "G3"],
+        ["C5", "D5"],
+        ["G5", "G6"],
+        ["I5", "I6"],
+        ["A8"],
+        ["D8"],
+        ["G8"],
+        ["J10"],
+    ]
+
+    ships[1] = ["B5", "C5", "D5"]
+
+    assert validate_fleet(ships) is False
