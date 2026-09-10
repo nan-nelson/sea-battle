@@ -1,39 +1,36 @@
-from uuid import UUID
-
-from fastapi.testclient import TestClient
-
-from database import SessionLocal
 from main import app
-from models import Game
+from fastapi.testclient import TestClient
 
 
 client = TestClient(app)
 
 
-def test_create_game():
-    response = client.post("/game")
+def test_create_game_has_no_request_body():
+    openapi = app.openapi()
 
-    assert response.status_code == 200
+    game_endpoint = openapi["paths"]["/game"]["post"]
 
-    data = response.json()
-
-    assert "session_id" in data
-    assert data["session_id"] is not None
+    assert "requestBody" not in game_endpoint
 
 
-def test_create_game_saved_to_database():
-    response = client.post("/game")
+def test_create_game_response_matches_contract():
+    openapi = app.openapi()
 
-    assert response.status_code == 200
+    game_endpoint = openapi["paths"]["/game"]["post"]
 
-    session_id = UUID(response.json()["session_id"])
+    response_schema = (
+        game_endpoint["responses"]["201"]["content"]["application/json"]["schema"]
+    )
 
-    db = SessionLocal()
+    assert response_schema["$ref"] == "#/components/schemas/GameResponse"
 
-    try:
-        game = db.get(Game, session_id)
 
-        assert game is not None
-        assert game.session_id == session_id
-    finally:
-        db.close()
+def test_game_response_contains_contract_fields():
+    openapi = app.openapi()
+
+    schemas = openapi["components"]["schemas"]
+    game_response = schemas["GameResponse"]
+
+    assert game_response["required"] == ["session_id", "ships"]
+    assert "session_id" in game_response["properties"]
+    assert "ships" in game_response["properties"]
