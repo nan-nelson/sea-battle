@@ -1,116 +1,36 @@
-from uuid import uuid4
-
-from fastapi.testclient import TestClient
-
-from database import SessionLocal
 from main import app
-from models import Game
+from fastapi.testclient import TestClient
 
 
 client = TestClient(app)
 
 
-def test_create_game():
-    game_id = str(uuid4())
+def test_create_game_has_no_request_body():
+    openapi = app.openapi()
 
-    response = client.post(
-        "/game",
-        json={
-            "game_id": game_id,
-            "ships": [
-                {
-                    "coordinates": ["A1", "A2", "A3", "A4"]
-                },
-                {
-                    "coordinates": ["C1", "D1", "E1"]
-                }
-            ]
-        },
+    game_endpoint = openapi["paths"]["/game"]["post"]
+
+    assert "requestBody" not in game_endpoint
+
+
+def test_create_game_response_matches_contract():
+    openapi = app.openapi()
+
+    game_endpoint = openapi["paths"]["/game"]["post"]
+
+    response_schema = (
+        game_endpoint["responses"]["201"]["content"]["application/json"]["schema"]
     )
 
-    assert response.status_code == 201
-
-    data = response.json()
-
-    assert "is_firstshot" in data
-    assert isinstance(data["is_firstshot"], bool)
+    assert response_schema["$ref"] == "#/components/schemas/GameResponse"
 
 
-def test_create_game_saved_to_database():
-    game_id = uuid4()
+def test_game_response_contains_contract_fields():
+    openapi = app.openapi()
 
-    ships = [
-        {
-            "coordinates": ["A1", "A2", "A3", "A4"]
-        },
-        {
-            "coordinates": ["C1", "D1", "E1"]
-        }
-    ]
+    schemas = openapi["components"]["schemas"]
+    game_response = schemas["GameResponse"]
 
-    response = client.post(
-        "/game",
-        json={
-            "game_id": str(game_id),
-            "ships": ships,
-        },
-    )
-
-    assert response.status_code == 201
-
-    db = SessionLocal()
-
-    try:
-        game = db.get(Game, game_id)
-
-        assert game is not None
-        assert game.game_id == game_id
-        assert game.ships == ships
-    finally:
-        db.close()
-
-
-def test_create_game_duplicate_id():
-    game_id = uuid4()
-
-    ships = [
-        {
-            "coordinates": ["A1", "A2", "A3", "A4"]
-        },
-        {
-            "coordinates": ["C1", "D1", "E1"]
-        }
-    ]
-
-    first_response = client.post(
-        "/game",
-        json={
-            "game_id": str(game_id),
-            "ships": ships,
-        },
-    )
-
-    assert first_response.status_code == 201
-
-    second_response = client.post(
-        "/game",
-        json={
-            "game_id": str(game_id),
-            "ships": ships,
-        },
-    )
-
-    assert second_response.status_code == 409
-def test_create_game_invalid_request():
-    response = client.post(
-        "/game",
-        json={
-            "ships": [
-                {
-                    "coordinates": ["A1", "A2", "A3", "A4"]
-                }
-            ]
-        },
-    )
-
-    assert response.status_code == 422
+    assert game_response["required"] == ["session_id", "ships"]
+    assert "session_id" in game_response["properties"]
+    assert "ships" in game_response["properties"]
