@@ -139,20 +139,60 @@ def get_ship_candidates(size):
 
     return candidates
 
+
+def score_ship_position(ship):
+    size = len(ship)
+    score = 0
+
+    if size >= 4:
+        border_score = 3
+        corner_bonus = 4
+    elif size == 3:
+        border_score = 2
+        corner_bonus = 3
+    elif size == 2:
+        border_score = 1
+        corner_bonus = 1
+    else:
+        border_score = 0
+        corner_bonus = 0
+
+    for coordinate in ship:
+        column = coordinate[0]
+        row = int(coordinate[1:])
+
+        if column in ("A", "J") or row in (1, 10):
+            score += border_score
+
+        if column in ("A", "J") and row in (1, 10):
+            score += corner_bonus
+
+    return score
+
+
 def choose_ship_candidate(size, occupied_cells):
     candidates = get_ship_candidates(size)
 
     valid_candidates = [
-        ship 
-        for ship in candidates 
+        ship
+        for ship in candidates
         if can_place_ship(ship, occupied_cells)
     ]
 
     if not valid_candidates:
         return None
 
-    return random.choice(valid_candidates)
+    best_score = max(score_ship_position(ship) for ship in valid_candidates)
 
+    score_threshold = best_score - 2
+
+    good_candidates = [
+        ship
+        for ship in valid_candidates
+        if score_ship_position(ship) >= score_threshold
+    ]
+
+    return random.choice(good_candidates)
 
 def generate_fleet():
     for _ in range(100):

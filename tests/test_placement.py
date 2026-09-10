@@ -4,7 +4,8 @@ from placement import (
     create_ship, 
     generate_fleet,
     get_ship_candidates, 
-    is_ship_inside_field, 
+    is_ship_inside_field,
+    score_ship_position, 
     validate_fleet
 )
 
@@ -265,3 +266,30 @@ def test_choose_ship_candidate_returns_valid_ship():
     assert ship is not None
     assert len(ship) == 4
     assert is_ship_inside_field(ship)
+
+
+def test_score_ship_position_prefers_corner():
+    corner_ship = ["A1", "A2", "A3", "A4"]
+    center_ship = ["D4", "D5", "D6", "D7"]
+
+    assert score_ship_position(corner_ship) > score_ship_position(center_ship)
+
+
+def test_score_ship_position_prefers_border():
+    border_ship = ["A4", "A5", "A6"]
+    center_ship = ["D4", "D5", "D6"]
+
+    assert score_ship_position(border_ship) > score_ship_position(center_ship)
+
+
+def test_choose_ship_candidate_prefers_good_position():
+    ship = choose_ship_candidate(4, set())
+
+    assert score_ship_position(ship) == 16
+
+
+def test_larger_ships_have_stronger_border_preference():
+    border_ship_4 = ["A1", "A2", "A3", "A4"]
+    border_ship_2= ["A5", "A6"]
+
+    assert score_ship_position(border_ship_4) > score_ship_position(border_ship_2)
