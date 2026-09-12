@@ -1,12 +1,12 @@
-from uuid import UUID
+from uuid import UUID, uuid4
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
 from pydantic import BaseModel
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Game
+from placement import generate_fleet
 
 
 app = FastAPI()
@@ -16,31 +16,31 @@ class Ship(BaseModel):
     coordinates: list[str]
 
 
-class GameRequest(BaseModel):
-    game_id: UUID
+class GameResponse(BaseModel):
+    session_id: UUID
     ships: list[Ship]
 
 
-class GameResponse(BaseModel):
-    is_firstshot: bool
-
-
 @app.post("/game", response_model=GameResponse, status_code=201)
-def create_game(request: GameRequest, db: Session = Depends(get_db)):
+def create_game(db: Session = Depends(get_db)):
+    session_id = uuid4()
+    fleet = generate_fleet()
+
+    ships = [
+        {"coordinates": ship}
+        for ship in fleet
+    ]
+
     game = Game(
-        game_id=request.game_id,
-        ships=[ship.model_dump() for ship in request.ships],
+        session_id=session_id,
+        ships=ships,
     )
 
-    try:
-        db.add(game)
-        db.commit()
-        db.refresh(game)
-    except IntegrityError:
-        db.rollback()
-        raise HTTPException(
-            status_code=409,
-            detail="Game with this game_id already exists",
-        )
+    db.add(game)
+    db.commit()
+    db.refresh(game)
 
-    return GameResponse(is_firstshot=False)
+    return GameResponse(
+        session_id=game.session_id,
+        ships=game.ships,
+    )
