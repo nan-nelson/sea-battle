@@ -94,3 +94,203 @@ def test_create_game_creates_unique_sessions():
     second_session_id = second_response.json()["session_id"]
 
     assert first_session_id != second_session_id
+
+
+def test_opponent_shot_returns_miss ():
+    response = client.post("/game")
+    
+    assert response.status_code == 201
+
+    data = response.json()
+    session_id = data["session_id"]
+
+    occupied_cells = {
+        coordinate
+        for ship in data["ships"]
+        for coordinate in ship["coordinates"]
+    }
+
+    all_cells = {
+        f"{column}{row}"
+        for column in "ABCDEFGHIJ"
+        for row in range(1, 11)
+    }
+
+    miss_coordinate = next(
+        coordinate
+        for coordinate in all_cells
+        if coordinate not in occupied_cells
+    )
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": miss_coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "miss"}
+
+
+def test_opponent_shot_returns_hit():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+
+    data = response.json()
+    session_id = data["session_id"]
+
+    ship = next(
+        ship
+        for ship in data["ships"]
+        if len(ship["coordinates"]) == 2
+    )
+
+    coordinate = ship["coordinates"][0]
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "hit"}
+
+
+def test_opponent_shot_returns_killed():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+
+    data = response.json()
+    session_id = data["session_id"]
+
+    ship = next(
+        ship
+        for ship in data["ships"]
+        if len(ship["coordinates"]) == 2
+    )
+
+    first_coordinate = ship["coordinates"][0]
+    second_coordinate = ship["coordinates"][1]
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": first_coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "hit"}
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": second_coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "killed"}
+
+
+def test_opponent_shot_rejects_invalid_coordinate():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+
+    session_id = response.json()["session_id"]
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": "Z99"},
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid coordinate"}
+
+
+def test_opponent_shot_returns_404_for_unknown_session():
+    unknown_session_id = "550e8400-e29b-41d4-a716-446655440000"
+
+    response = client.post(
+        f"/game/{unknown_session_id}/opponent-shot",
+        json={"coordinate": "A1"},
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Session not found"}
+
+
+def test_opponent_shot_saves_hit_to_database():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+
+    data = response.json()
+    session_id = UUID(data["session_id"])
+
+    ship = next(
+        ship
+        for ship in data["ships"]
+        if len(ship["coordinates"]) == 2
+    )
+
+    coordinate = ship["coordinates"][0]
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "hit"}
+
+    db = SessionLocal()
+
+    try:
+        game = db.get(Game, session_id)
+
+        assert game is not None
+        assert coordinate in game.hits
+    finally:
+        db.close()
+
+
+def test_opponent_shot_kills_ship_only_after_all_cells_are_hit():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+
+    data = response.json()
+    session_id = data["session_id"]
+
+    ship = next(
+        ship
+        for ship in data["ships"]
+        if len(ship["coordinates"]) == 3
+    )
+
+    first_coordinate = ship["coordinates"][0]
+    second_coordinate = ship["coordinates"][1]
+    third_coordinate = ship["coordinates"][2]
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": first_coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "hit"}
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": second_coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "hit"}
+
+    response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": third_coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "killed"}
