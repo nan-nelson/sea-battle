@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi.testclient import TestClient
 
 from database import SessionLocal
-from main import app
+from main import app, get_active_hit_shots
 from models import Game
 from placement import validate_fleet
 
@@ -294,3 +294,259 @@ def test_opponent_shot_kills_ship_only_after_all_cells_are_hit():
 
     assert response.status_code == 200
     assert response.json() == {"result": "killed"}
+
+
+def test_shot_returns_valid_coordinate():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+
+    session_id = response.json()["session_id"]
+
+    response = client.post(
+        f"/game/{session_id}/shot",
+    )
+
+    assert response.status_code == 200
+
+    coordinate = response.json()["coordinate"]
+
+    assert coordinate[0] in "ABCDEFGHIJ"
+    assert 1 <= int(coordinate[1:]) <= 10
+
+
+def test_shot_does_not_repeat_coordinate():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+
+    session_id = response.json()["session_id"]
+
+    first_response = client.post(
+        f"/game/{session_id}/shot",
+    )
+
+    second_response = client.post(
+        f"/game/{session_id}/shot",
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+
+    first_coordinate = first_response.json()["coordinate"]
+    second_coordinate = second_response.json()["coordinate"]
+
+    assert first_coordinate != second_coordinate
+
+
+def test_shot_result_accepts_miss():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    shot_response = client.post(f"/game/{session_id}/shot")
+    assert shot_response.status_code == 200
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "miss"},
+    )
+
+    assert result_response.status_code == 200
+    assert result_response.json() == {"status": "accepted"}
+
+
+def test_shot_result_accepts_hit():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    shot_response = client.post(f"/game/{session_id}/shot")
+    assert shot_response.status_code == 200
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "hit"},
+    )
+
+    assert result_response.status_code == 200
+    assert result_response.json() == {"status": "accepted"}
+
+
+def test_shot_result_accepts_killed():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    shot_response = client.post(f"/game/{session_id}/shot")
+    assert shot_response.status_code == 200
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "killed"},
+    )
+
+    assert result_response.status_code == 200
+    assert result_response.json() == {"status": "accepted"}
+
+
+
+def test_shot_result_rejects_invalid_result():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    client.post(f"/game/{session_id}/shot")
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "unknown"},
+    )
+
+    assert result_response.status_code == 400
+    assert result_response.json()["detail"] == "Invalid result"
+
+
+def test_shot_result_without_shot_returns_conflict():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "miss"},
+    )
+
+    assert result_response.status_code == 409
+    assert result_response.json()["detail"] == "No pending shot"
+
+def test_shot_result_is_saved_to_game():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    shot_response = client.post(f"/game/{session_id}/shot")
+    assert shot_response.status_code == 200
+    coordinate = shot_response.json()["coordinate"]
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "hit"},
+    )
+
+    assert result_response.status_code == 200
+
+    game = SessionLocal().get(Game, UUID(session_id))
+
+    assert game is not None
+    assert game.shots == [
+        {
+            "coordinate": coordinate,
+            "result": "hit",
+        }
+    ]
+
+def test_shot_after_hit_targets_neighbour():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    first_shot = client.post(
+        f"/game/{session_id}/shot",
+    )
+    assert first_shot.status_code == 200
+    first_coordinate = first_shot.json()["coordinate"]
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "hit"},
+    )
+    assert result_response.status_code == 200
+
+    second_shot = client.post(
+        f"/game/{session_id}/shot",
+    )
+    assert second_shot.status_code == 200
+    second_coordinate = second_shot.json()["coordinate"]
+
+    column = ord(first_coordinate[0]) - ord("A")
+    row = int(first_coordinate[1:])
+
+    second_column = ord(second_coordinate[0]) - ord("A")
+    second_row = int(second_coordinate[1:])
+
+    column_difference = abs(column - second_column)
+    row_difference = abs(row - second_row)
+
+    assert column_difference + row_difference == 1
+
+
+def test_shot_after_two_hits_continues_direction():
+    response = client.post("/game")
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    first_shot = client.post(
+        f"/game/{session_id}/shot",
+    )
+    assert first_shot.status_code == 200
+    first_coordinate = first_shot.json()["coordinate"]
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "hit"},
+    )
+    assert result_response.status_code == 200
+
+    second_shot = client.post(
+        f"/game/{session_id}/shot",
+    )
+    assert second_shot.status_code == 200
+    second_coordinate = second_shot.json()["coordinate"]
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "hit"},
+    )
+    assert result_response.status_code == 200
+
+    third_shot = client.post(
+        f"/game/{session_id}/shot",
+    )
+    assert third_shot.status_code == 200
+    third_coordinate = third_shot.json()["coordinate"]
+
+    first_column = ord(first_coordinate[0])
+    first_row = int(first_coordinate[1:])
+
+    second_column = ord(second_coordinate[0])
+    second_row = int(second_coordinate[1:])
+
+    third_column = ord(third_coordinate[0])
+    third_row = int(third_coordinate[1:])
+
+    column_direction = second_column - first_column
+    row_direction = second_row - first_row
+
+    assert (
+        third_column == second_column + column_direction
+        and third_row == second_row + row_direction
+    ) or (
+        third_column == first_column - column_direction
+        and third_row == first_row - row_direction
+    )
+
+
+def test_get_active_hit_shots_resets_after_killed():
+    shots = [
+        {"coordinate": "D5", "result": "hit"},
+        {"coordinate": "D6", "result": "hit"},
+        {"coordinate": "D7", "result": "killed"},
+        {"coordinate": "A1", "result": "hit"},
+    ]
+
+    active_hits = get_active_hit_shots(shots)
+
+    assert active_hits == [
+        {"coordinate": "A1", "result": "hit"},
+    ]

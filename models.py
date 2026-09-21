@@ -23,3 +23,8 @@ class Game(Base):
         JSON,
         nullable=False,
     )
+
+    shots: Mapped[list] = mapped_column(
+        JSON,
+        nullable=False,
+    )
