@@ -58,10 +58,41 @@ python -m pytest
 
 Создаёт новую игру и сохраняет её в PostgreSQL.
 
+Пример запроса:
+
+```json
+{
+  "game_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
+  "ships": [
+    {
+      "coordinates": ["A1", "A2", "A3", "A4"]
+    },
+    {
+      "coordinates": ["C1", "D1", "E1"]
+    }
+  ]
+}
+```
+
 Пример ответа:
 
 ```json
 {
-  "session_id": "6b846c24-b7c4-4887-8d1a-ab6e212d7048"
+  "is_firstshot": false
 }
+```
+
+Коды ответа:
+
+```json
+201 Created — игра создана
+409 Conflict — игра с таким game_id уже существует
+422 Unprocessable Entity — тело запроса не соответствует схеме
+```
+
+Планируемые коды ответа:
+
+```json
+400 Bad Request — расстановка не соответствует правилам
+500 Internal Server Error — непредвиденная ошибка
 ```
