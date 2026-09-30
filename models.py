@@ -9,7 +9,7 @@ from database import Base
 class Game(Base):
     __tablename__ = "games"
 
-    game_id: Mapped[UUID] = mapped_column(
+    session_id: Mapped[UUID] = mapped_column(
         Uuid,
         primary_key=True,
     )
