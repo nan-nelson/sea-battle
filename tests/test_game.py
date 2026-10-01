@@ -550,3 +550,112 @@ def test_get_active_hit_shots_resets_after_killed():
     assert active_hits == [
         {"coordinate": "A1", "result": "hit"},
     ]
+
+
+def test_close_game_returns_closed():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    close_response = client.post(
+        f"/game/{session_id}/close",
+    )
+
+    assert close_response.status_code == 200
+    assert close_response.json() == {"status": "closed"}
+
+
+def test_close_game_returns_400_when_already_closed():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    first_close = client.post(
+        f"/game/{session_id}/close",
+    )
+
+    assert first_close.status_code == 200
+
+    second_close = client.post(
+        f"/game/{session_id}/close",
+    )
+
+    assert second_close.status_code == 400
+    assert second_close.json() == {"detail": "Game is already closed"}
+
+
+def test_close_game_returns_404_for_unknown_session():
+    unknown_session_id = "550e8400-e29b-41d4-a716-446655440000"
+
+    response = client.post(
+        f"/game/{unknown_session_id}/close",
+    )
+
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Game not found"}
+
+
+def test_shot_after_game_closed_returns_410():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    close_response = client.post(
+        f"/game/{session_id}/close",
+    )
+
+    assert close_response.status_code == 200
+
+    shot_response = client.post(
+        f"/game/{session_id}/shot",
+    )
+
+    assert shot_response.status_code == 410
+    assert shot_response.json() == {"detail": "Game is already closed"}
+
+
+def test_shot_result_after_game_closed_returns_410():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    close_response = client.post(
+        f"/game/{session_id}/close",
+    )
+
+    assert close_response.status_code == 200
+
+    result_response = client.post(
+        f"/game/{session_id}/shot/result",
+        json={"result": "miss"},
+    )
+
+    assert result_response.status_code == 410
+    assert result_response.json() == {"detail": "Game is already closed"}
+
+
+def test_opponent_shot_after_game_closed_returns_410():
+    response = client.post("/game")
+
+    assert response.status_code == 201
+    session_id = response.json()["session_id"]
+
+    close_response = client.post(
+        f"/game/{session_id}/close",
+    )
+
+    assert close_response.status_code == 200
+
+    opponent_shot_response = client.post(
+        f"/game/{session_id}/opponent-shot",
+        json={"coordinate": "A1"},
+    )
+
+    assert opponent_shot_response.status_code == 410
+    assert opponent_shot_response.json() == {
+        "detail": "Game is already closed"
+    }
