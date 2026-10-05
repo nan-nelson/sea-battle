@@ -1,3 +1,5 @@
+import time
+from concurrent.futures import ThreadPoolExecutor
 from uuid import UUID
 
 from fastapi.testclient import TestClient
@@ -659,3 +661,297 @@ def test_opponent_shot_after_game_closed_returns_410():
     assert opponent_shot_response.json() == {
         "detail": "Game is already closed"
     }
+
+
+def test_games_are_isolated():
+    first_response = client.post("/game")
+    second_response = client.post("/game")
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    first_game = first_response.json()
+    second_game = second_response.json()
+
+    first_session_id = first_game["session_id"]
+    second_session_id = second_game["session_id"]
+
+    first_coordinate = first_game["ships"][0]["coordinates"][0]
+
+    response = client.post(
+        f"/game/{first_session_id}/opponent-shot",
+        json={"coordinate": first_coordinate},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"result": "hit"}
+
+    db = SessionLocal()
+
+    try:
+        first_game_db = db.get(Game, UUID(first_session_id))
+        second_game_db = db.get(Game, UUID(second_session_id))
+
+        assert first_game_db is not None
+        assert second_game_db is not None
+
+        assert first_coordinate in first_game_db.hits
+        assert first_coordinate not in second_game_db.hits
+    finally:
+        db.close()
+
+
+def test_games_have_isolated_shots():
+    first_response = client.post("/game")
+    second_response = client.post("/game")
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    first_session_id = first_response.json()["session_id"]
+    second_session_id = second_response.json()["session_id"]
+
+    first_shot = client.post(
+        f"/game/{first_session_id}/shot"
+    )
+    second_shot = client.post(
+        f"/game/{second_session_id}/shot"
+    )
+
+    assert first_shot.status_code == 200
+    assert second_shot.status_code == 200
+
+    first_coordinate = first_shot.json()["coordinate"]
+    second_coordinate = second_shot.json()["coordinate"]
+
+    first_result = client.post(
+        f"/game/{first_session_id}/shot/result",
+        json={"result": "miss"},
+    )
+    second_result = client.post(
+        f"/game/{second_session_id}/shot/result",
+        json={"result": "hit"},
+    )
+
+    assert first_result.status_code == 200
+    assert second_result.status_code == 200
+
+    db = SessionLocal()
+
+    try:
+        first_game = db.get(Game, UUID(first_session_id))
+        second_game = db.get(Game, UUID(second_session_id))
+
+        assert first_game is not None
+        assert second_game is not None
+
+        assert first_game.shots == [
+            {
+                "coordinate": first_coordinate,
+                "result": "miss",
+            }
+        ]
+
+        assert second_game.shots == [
+            {
+                "coordinate": second_coordinate,
+                "result": "hit",
+            }
+        ]
+    finally:
+        db.close()
+
+
+def test_closing_one_game_does_not_close_another():
+    first_response = client.post("/game")
+    second_response = client.post("/game")
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    first_session_id = first_response.json()["session_id"]
+    second_session_id = second_response.json()["session_id"]
+
+    close_response = client.post(
+        f"/game/{first_session_id}/close"
+    )
+
+    assert close_response.status_code == 200
+    assert close_response.json() == {"status": "closed"}
+
+    second_shot = client.post(
+        f"/game/{second_session_id}/shot"
+    )
+
+    assert second_shot.status_code == 200
+
+    db = SessionLocal()
+
+    try:
+        first_game = db.get(Game, UUID(first_session_id))
+        second_game = db.get(Game, UUID(second_session_id))
+
+        assert first_game is not None
+        assert second_game is not None
+
+        assert first_game.closed is True
+        assert second_game.closed is False
+    finally:
+        db.close()
+
+
+def test_parallel_games():
+    first_response = client.post("/game")
+    second_response = client.post("/game")
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 201
+
+    first_session_id = first_response.json()["session_id"]
+    second_session_id = second_response.json()["session_id"]
+
+    session_ids = [
+        first_session_id,
+        second_session_id,
+    ]
+
+    def make_shot(session_id):
+        return client.post(
+            f"/game/{session_id}/shot"
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses = list(
+            executor.map(make_shot, session_ids)
+        )
+
+    assert all(response.status_code == 200 for response in responses)
+
+    first_coordinate = responses[0].json()["coordinate"]
+    second_coordinate = responses[1].json()["coordinate"]
+
+    assert first_coordinate != second_coordinate
+
+
+def test_parallel_games_response_time():
+    session_ids = []
+
+    for _ in range(10):
+        response = client.post("/game")
+        assert response.status_code == 201
+        session_ids.append(response.json()["session_id"])
+
+    def make_shot(session_id):
+        start = time.perf_counter()
+
+        response = client.post(
+            f"/game/{session_id}/shot"
+        )
+
+        elapsed = time.perf_counter() - start
+
+        return response, elapsed
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        results = list(
+            executor.map(make_shot, session_ids)
+        )
+
+    for response, elapsed in results:
+        assert response.status_code == 200
+        assert elapsed < 1
+
+
+def test_games_have_isolated_ships():
+    response1 = client.post("/game")
+    response2 = client.post("/game")
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+
+    game1 = response1.json()
+    game2 = response2.json()
+
+    assert game1["session_id"] != game2["session_id"]
+    assert game1["ships"] != game2["ships"]
+
+
+def test_games_have_isolated_ships():
+    response1 = client.post("/game")
+    response2 = client.post("/game")
+
+    assert response1.status_code == 201
+    assert response2.status_code == 201
+
+    game1 = response1.json()
+    game2 = response2.json()
+
+    db = SessionLocal()
+
+    try:
+        saved_game1 = db.get(Game, UUID(game1["session_id"]))
+        saved_game2 = db.get(Game, UUID(game2["session_id"]))
+
+        assert saved_game1 is not None
+        assert saved_game2 is not None
+
+        assert saved_game1.ships == game1["ships"]
+        assert saved_game2.ships == game2["ships"]
+    finally:
+        db.close()
+
+
+def test_interleaved_games_keep_separate_state():
+    response1 = client.post("/game")
+    response2 = client.post("/game")
+
+    assert response1.status_code == 201
+    assert response2.status_code == 201
+
+    session1 = response1.json()["session_id"]
+    session2 = response2.json()["session_id"]
+
+    shot1 = client.post(f"/game/{session1}/shot")
+    assert shot1.status_code == 200
+
+    opponent_shot2 = client.post(
+        f"/game/{session2}/opponent-shot",
+        json={"coordinate": "A1"},
+    )
+    assert opponent_shot2.status_code == 200
+
+    shot2 = client.post(f"/game/{session2}/shot")
+    assert shot2.status_code == 200
+
+    opponent_shot1 = client.post(
+        f"/game/{session1}/opponent-shot",
+        json={"coordinate": "J10"},
+    )
+    assert opponent_shot1.status_code == 200
+
+    db = SessionLocal()
+
+    try:
+        game1 = db.get(Game, UUID(session1))
+        game2 = db.get(Game, UUID(session2))
+
+        assert game1 is not None
+        assert game2 is not None
+
+        assert "J10" in game1.hits
+        assert "A1" not in game1.hits
+
+        assert "A1" in game2.hits
+        assert "J10" not in game2.hits
+
+        assert any(
+            shot["coordinate"] == shot1.json()["coordinate"]
+            for shot in game1.shots
+        )
+
+        assert any(
+            shot["coordinate"] == shot2.json()["coordinate"]
+            for shot in game2.shots
+        )
+    finally:
+        db.close()
