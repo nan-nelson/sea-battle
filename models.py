@@ -28,3 +28,8 @@ class Game(Base):
         JSON,
         nullable=False,
     )
+
+    closed: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
+    )
