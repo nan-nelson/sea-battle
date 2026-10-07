@@ -1,49 +1,101 @@
 import httpx
 import random
+from placement import validate_fleet
 
 SERVICE_A_URL = "http://localhost:8001"
 SERVICE_B_URL = "http://localhost:8002"
 
 def create_game(service_url):
-    response = httpx.post(f"{service_url}/game")
-    response.raise_for_status()
+    try:
+        response = httpx.post(
+            f"{service_url}/game",
+            timeout=1.0,
+        )
+        response.raise_for_status()
+
+    except httpx.TimeoutException:
+        raise ValueError("Service timeout")
+
+    except httpx.HTTPError:
+        raise ValueError("Service error")
+
+    game = response.json()
+
+    if not validate_fleet(
+        [ship["coordinates"] for ship in game["ships"]]
+    ):
+        raise ValueError("Invalid fleet")
+
+    return game
 
 
-    return response.json()
+def create_match(service_a_url, service_b_url):
+    try:
+        game_a = create_game(service_a_url)
+    except ValueError as error:
+        if str(error) in ("Service timeout", "Invalid fleet"):
+            return None, None, "B"
+        raise
 
+    try:
+        game_b = create_game(service_b_url)
+    except ValueError as error:
+        if str(error) in ("Service timeout", "Invalid fleet"):
+            return None, None, "A"
+        raise
 
-def create_match():
-    game_a = create_game(SERVICE_A_URL)
-    game_b = create_game(SERVICE_B_URL)
-
-    return game_a, game_b
+    return game_a, game_b, None
 
 
 def make_shot(service_url, session_id):
-    response = httpx.post(
-        f"{service_url}/game/{session_id}/shot"
-    )
-    response.raise_for_status()
+    try:
+        response = httpx.post(
+            f"{service_url}/game/{session_id}/shot",
+            timeout=1.0,
+        )
+        response.raise_for_status()
+
+    except httpx.TimeoutException:
+        raise ValueError("Service timeout")
+
+    except httpx.HTTPError:
+        raise ValueError("Service error")
 
     return response.json()
 
 
 def send_opponent_shot(service_url, session_id, coordinate):
-    response = httpx.post(
-        f"{service_url}/game/{session_id}/opponent-shot",
-        json={"coordinate": coordinate},
-    )
-    response.raise_for_status()
+    try:
+        response = httpx.post(
+            f"{service_url}/game/{session_id}/opponent-shot",
+            json={"coordinate": coordinate},
+            timeout=1.0
+        )
+        response.raise_for_status()
+
+    except httpx.TimeoutException:
+        raise ValueError("Service timeout")
+
+    except httpx.HTTPError:
+        raise ValueError("Service error")
 
     return response.json()
 
 
 def send_shot_result(service_url, session_id, result):
-    response = httpx.post(
-        f"{service_url}/game/{session_id}/shot/result",
-        json={"result": result},
-    )
-    response.raise_for_status()
+    try:
+        response = httpx.post(
+            f"{service_url}/game/{session_id}/shot/result",
+            json={"result": result},
+            timeout=1.0
+        )
+        response.raise_for_status()
+    
+    except httpx.TimeoutException:
+        raise ValueError("Service timeout")
+    
+    except httpx.HTTPError:
+        raise ValueError("Service error")
 
     return response.json()
 
@@ -62,6 +114,8 @@ def play_turn(
     shooter_session_id,
     defender_url,
     defender_session_id,
+    defender_game,
+    defender_hits,
 ):
     shot = make_shot(
         shooter_url,
@@ -73,6 +127,18 @@ def play_turn(
         defender_session_id,
         shot["coordinate"],
     )
+
+    expected_result = get_expected_result(
+        defender_game,
+        shot["coordinate"],
+        defender_hits,
+    )
+
+    if result.get("result") not in ("hit", "miss", "killed"):
+        raise ValueError("Service returned invalid result")
+
+    if result["result"] != expected_result:
+        raise ValueError("Service returned incorrect result")
 
     send_shot_result(
         shooter_url,
@@ -93,6 +159,19 @@ def is_fleet_sunk(game, hits):
     return ship_coordinates.issubset(hits)
 
 
+def get_expected_result(game, coordinate, hits):
+    for ship in game["ships"]:
+        ship_coordinates = set(ship["coordinates"])
+
+        if coordinate in ship_coordinates:
+            if ship_coordinates.issubset(hits | {coordinate}):
+                return "killed"
+
+            return "hit"
+
+    return "miss"
+
+
 def update_hits(hits, coordinate, result):
     if result in ("hit", "killed"):
         hits.add(coordinate)
@@ -101,7 +180,13 @@ def update_hits(hits, coordinate, result):
 
 
 def play_match(service_a_url, service_b_url):
-    game_a, game_b = create_match()
+    game_a, game_b, winner = create_match(
+        service_a_url,
+        service_b_url,
+    )
+
+    if game_a is None:
+        return winner
 
     hits_a = set()
     hits_b = set()
@@ -110,12 +195,25 @@ def play_match(service_a_url, service_b_url):
 
     while True:
         if current_shooter == "A":
-            coordinate, result = play_turn(
-                service_a_url,
-                game_a["session_id"],
-                service_b_url,
-                game_b["session_id"],
-            )
+            try:
+                coordinate, result = play_turn(
+                    service_a_url,
+                    game_a["session_id"],
+                    service_b_url,
+                    game_b["session_id"],
+                    game_b,
+                    hits_b,
+                )
+            except ValueError as error:
+                if str(error) in (
+                    "Service timeout",
+                    "Service error",
+                    "Service returned incorrect result",
+                    "Service returned invalid result",
+                ):
+                    winner = "B"
+                    break
+                raise
 
             print("A:", coordinate, result)
             
@@ -126,12 +224,20 @@ def play_match(service_a_url, service_b_url):
                 break
 
         else:
-            coordinate, result = play_turn(
-                service_b_url,
-                game_b["session_id"],
-                service_a_url,
-                game_a["session_id"],
-            )
+            try:
+                coordinate, result = play_turn(
+                    service_b_url,
+                    game_b["session_id"],
+                    service_a_url,
+                    game_a["session_id"],
+                    game_a,
+                    hits_a,
+                )
+            except ValueError as error:
+                if str(error) in ("Service timeout", "Service error"):
+                    winner = "A"
+                    break
+                raise
 
             print("B:", coordinate, result)
             hits_a = update_hits(hits_a, coordinate, result)
