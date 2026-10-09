@@ -101,12 +101,15 @@ def send_shot_result(service_url, session_id, result):
 
 
 def close_game(service_url, session_id):
-    response = httpx.post(
-        f"{service_url}/game/{session_id}/close"
-    )
-    response.raise_for_status()
-
-    return response.json()
+    try:
+        response = httpx.post(
+            f"{service_url}/game/{session_id}/close",
+            timeout=1.0
+        )
+        response.raise_for_status()
+        return response.json()
+    except httpx.TimeoutException:
+        return None
 
 
 def play_turn(
@@ -234,7 +237,12 @@ def play_match(service_a_url, service_b_url):
                     hits_a,
                 )
             except ValueError as error:
-                if str(error) in ("Service timeout", "Service error"):
+                if str(error) in (
+                    "Service timeout", 
+                    "Service error"
+                    "Service returned incorrect result",
+                    "Service returned invalid result",
+                    ):
                     winner = "A"
                     break
                 raise
