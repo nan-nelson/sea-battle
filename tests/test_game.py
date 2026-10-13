@@ -862,12 +862,12 @@ def test_parallel_games_response_time():
         assert elapsed < 1
 
 
-def test_games_have_isolated_ships():
+def test_games_have_different_sessions_and_ships():
     response1 = client.post("/game")
     response2 = client.post("/game")
 
-    assert response1.status_code == 200
-    assert response2.status_code == 200
+    assert response1.status_code == 201
+    assert response2.status_code == 201
 
     game1 = response1.json()
     game2 = response2.json()

@@ -1,5 +1,6 @@
 import httpx
 import random
+import uuid
 from placement import validate_fleet
 
 SERVICE_A_URL = "http://localhost:8001"
@@ -19,7 +20,38 @@ def create_game(service_url):
     except httpx.HTTPError:
         raise ValueError("Service error")
 
-    game = response.json()
+    try:
+        game = response.json()
+
+    except ValueError:
+        raise ValueError("Invalid service response")
+
+    if not isinstance(game, dict):
+        raise ValueError("Invalid service response")
+
+    if "session_id" not in game or "ships" not in game:
+        raise ValueError("Invalid service response")
+
+    if not isinstance(game["session_id"], str):
+        raise ValueError("Invalid service response")
+
+    try:
+        uuid.UUID(game["session_id"])
+    except (ValueError, AttributeError):
+        raise ValueError("Invalid service response")
+
+    if not isinstance(game["ships"], list):
+        raise ValueError("Invalid service response")
+
+    for ship in game["ships"]:
+        if not isinstance(ship, dict):
+            raise ValueError("Invalid service response")
+
+        if "coordinates" not in ship:
+            raise ValueError("Invalid service response")
+
+        if not isinstance(ship["coordinates"], list):
+            raise ValueError("Invalid service response")
 
     if not validate_fleet(
         [ship["coordinates"] for ship in game["ships"]]
@@ -120,10 +152,28 @@ def play_turn(
     defender_game,
     defender_hits,
 ):
+
     shot = make_shot(
         shooter_url,
         shooter_session_id,
     )
+
+    
+    if not isinstance(shot, dict) or "coordinate" not in shot:
+        raise ValueError("Invalid service response")
+
+    coordinate = shot["coordinate"]
+
+    if (
+        
+        not isinstance(coordinate, str)
+        or len(coordinate) < 2
+        or coordinate[0] not in "ABCDEFGHIJ"
+        or not coordinate[1:].isdigit()
+        or not (1 <= int(coordinate[1:]) <= 10)
+    ):
+        raise ValueError("Invalid service response")
+
 
     result = send_opponent_shot(
         defender_url,
