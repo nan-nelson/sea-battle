@@ -95,21 +95,6 @@ def get_active_hit_shots(shots):
     return hit_shots
 
 
-def get_active_hit_shots(shots):
-    hit_shots = []
-
-    for shot in reversed(shots):
-        if shot["result"] == "killed":
-            break
-
-        if shot["result"] == "hit":
-            hit_shots.append(shot)
-
-    hit_shots.reverse()
-
-    return hit_shots
-
-
 class Ship(BaseModel):
     coordinates: list[str]
 
@@ -154,6 +139,7 @@ def create_game(db: Session = Depends(get_db)):
         ships=ships,
         hits=[],
         shots=[],
+        closed=False,
     )
 
     db.add(game)
@@ -166,6 +152,27 @@ def create_game(db: Session = Depends(get_db)):
     )
 
 
+@app.post("/game/{session_id}/close")
+def close_game(session_id: UUID, db: Session = Depends(get_db)):
+    game = db.get(Game, session_id)
+
+    if game is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Game not found",
+        )
+
+    if game.closed:
+        raise HTTPException(
+            status_code=400,
+            detail="Game is already closed",
+        )
+
+    game.closed = True
+    db.commit()
+
+    return {"status": "closed"}
+
 @app.post(
     "/game/{session_id}/shot",
     response_model=ShotResponse,
@@ -176,10 +183,10 @@ def shot(
 ):
     game = db.get(Game, session_id)
 
-    if game is None:
+    if game.closed:
         raise HTTPException(
-            status_code=404,
-            detail="Session not found",
+            status_code=410,
+            detail="Game is already closed",
         )
 
     all_coordinates = [
@@ -266,6 +273,13 @@ def shot_result(
             detail="Session not found",
         )
 
+    if game.closed:
+        raise HTTPException(
+            status_code=410,
+            detail="Game is already closed",
+        )
+
+
     if request.result not in ("miss", "hit", "killed"):
         raise HTTPException(
             status_code=400,
@@ -321,6 +335,13 @@ def opponent_shot(
             status_code=404,
             detail="Session not found",
         )
+
+    if game.closed:
+        raise HTTPException(
+            status_code=410,
+            detail="Game is already closed",
+        )
+
 
     if not is_valid_coordinate(request.coordinate):
         raise HTTPException(
